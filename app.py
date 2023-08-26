@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 import asyncio
 from concurrent.futures import ProcessPoolExecutor
-import logging, os, secrets, json, requests
+import logging, os, secrets, json, requests, random
 from eth_account import Account
 from eth_utils import keccak, to_normalized_address
 from web3.auto import w3
@@ -97,23 +97,33 @@ def find_lowest_neighbourhood():
     response = requests.get("https://api.swarmscan.io/v1/network/neighborhoods")
     data = response.json()
     
-    for depth_str, neighbourhoods in data["neighborhoods"].items():
+    chosen_depth = None
+    eligible_neighbourhoods = []
+    
+    for depth_str, neighbourhoods in sorted(data["neighborhoods"].items(), key=lambda item: int(item[0])):
         depth = int(depth_str)
         
         # Skip depth 0
         if depth == 0:
             continue
         
-        for neighbourhood_bin, count in neighbourhoods.items():
-            # Remove the "0b" prefix and check if neighbourhood_bin is a valid binary string
+        eligible_neighbourhoods.clear()
+        
+        for neighbourhood_bin, count in sorted(neighbourhoods.items(), key=lambda item: int(item[1])):
             neighbourhood_bin = neighbourhood_bin[2:]
-            if set(neighbourhood_bin) <= {'0', '1'}:
-                neighbourhood_int = int(neighbourhood_bin, 2)
-                
-                if count < 4:
-                    return depth, neighbourhood_int
+            if set(neighbourhood_bin) <= {'0', '1'} and count < 4:
+                eligible_neighbourhoods.append(int(neighbourhood_bin, 2))
+        
+        if len(eligible_neighbourhoods) > 0:
+            chosen_depth = depth
+            break
     
-    return None, None
+    if chosen_depth is not None:
+        chosen_neighbourhood = random.choice(eligible_neighbourhoods)
+        return chosen_depth, chosen_neighbourhood
+    else:
+        return None, None
+
 
 @app.route('/generate_wallet', methods=['GET'])
 def generate_wallet():
