@@ -50,9 +50,9 @@ class MinedAddress:
         self.radius = radius
         self.neighbourhood = neighbourhood
         self.topology = topology
-        self.base_overlay_address = self.topology.get_base_overlay_address(self.neighbourhood)[:3]  # Keep the first three bytes
-        self.bit_mask = self.topology.neighbourhood_bitmask()[:3]  # Keep the first three bytes
-        self.first_byte_base = self.base_overlay_address[0]  # Store the first byte
+        self.base_overlay_address = self.topology.get_base_overlay_address(self.neighbourhood)[:3]
+        self.bit_mask = self.topology.neighbourhood_bitmask()[:3]
+        self.first_byte_base = self.base_overlay_address[0]
         self.logger = logging.getLogger('MinedAddress')
 
     def compare_overlay_address_with_base(self, overlay_address, base_overlay_address, bit_mask):
@@ -64,14 +64,27 @@ class MinedAddress:
                 return False
         
         return True
+
+    def create_overlay_hash(self, ethereum_address, nonce):
+        ethereum_address_bytes = bytes.fromhex(ethereum_address[2:])  # Convert hex string to bytes
+        overlay_data = ethereum_address_bytes + nonce
+        overlay_hash = keccak(overlay_data)
+        return overlay_hash
+
+    def generate_nonce(self):
+        return secrets.token_bytes(32)
+
     def mine_wallet(self):
         match_found = False
         count = 0
 
         while not match_found and count < MAX_ITERATIONS:
+            overlay_address = self.topology.get_base_overlay_address(self.neighbourhood)[:3]
             private_key, eth_address = self.generate_ethereum_address()
-            overlay_address = self.calculate_overlay_address(private_key)
-            logging.debug("Private Key: %s, Ethereum Address: %s, Overlay: %s", private_key, eth_address, overlay_address) 
+            nonce = self.generate_nonce()
+            overlay_hash = self.create_overlay_hash(eth_address, nonce)
+
+            logging.debug("Private Key: %s, Ethereum Address: %s, Overlay: %s, Nonce: %s", private_key, eth_address, overlay_address.hex(), nonce.hex())
 
             character_match = False
 
@@ -80,7 +93,7 @@ class MinedAddress:
                 continue
 
             for i in range(1, 3):
-                if overlay_address[i] & self.bit_mask[i] == self.base_overlay_address[i] & self.bit_mask[i]:
+                if overlay_hash[i] & self.bit_mask[i] == self.base_overlay_address[i] & self.bit_mask[i]:
                     self.logger.debug("Character match found for byte %d", i)
                     character_match = True
                     break
@@ -92,11 +105,13 @@ class MinedAddress:
 
             count += 1
             logging.debug("count increase to %d", count)
-    
+
         if match_found:
             return {
                 'private_key': private_key,
-                'ethereum_address': eth_address
+                'ethereum_address': eth_address,
+                'overlay_address': overlay_address.hex(),
+                'nonce': nonce.hex()
             }
         return None
 
@@ -132,7 +147,6 @@ async def generate_wallet_async(depth, neighbourhood, radius, num_processes=1):
         valid_wallets = [wallet for wallet in mined_wallets if wallet is not None]
         return valid_wallets
 
-# Update the generate_wallet route to exclude network_id parameter
 @app.route('/generate_wallet', methods=['GET'])
 def generate_wallet():
     neighbourhood = request.args.get('n')
@@ -142,13 +156,16 @@ def generate_wallet():
         return jsonify({'error': 'Neighbourhood and depth parameters are required.'}), 400
 
     radius = 3
-    num_processes = 16
+    num_processes = 1
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     result = loop.run_until_complete(generate_wallet_async(int(depth), neighbourhood, radius, num_processes))
 
-    return jsonify(result), 200
+    if result:
+        return jsonify(result[0]), 200
+    else:
+        return jsonify({'error': 'No valid wallet found.'}), 404
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
