@@ -10,7 +10,7 @@ from eth_utils import keccak, to_normalized_address
 app = Flask(__name__)
 executor = ProcessPoolExecutor()
 
-logging.basicConfig(level=logging.DEBUG)  # Set the logging level to DEBUG
+logging.basicConfig(level=logging.INFO)  # Set the logging level to DEBUG
 MAX_ITERATIONS = 100000000  # Adjust this value as needed
 
 class Topology:
@@ -65,10 +65,9 @@ class MinedAddress:
         
         return True
 
-    def create_overlay_hash(self, ethereum_address, nonce):
-        ethereum_address_bytes = bytes.fromhex(ethereum_address[2:])  # Convert hex string to bytes
-        overlay_data = ethereum_address_bytes + nonce
-        overlay_hash = keccak(overlay_data)
+    def calculate_overlay_address(self, ethereum_address):
+        ethereum_address_bytes = bytes.fromhex(ethereum_address[2:])
+        overlay_hash = keccak(ethereum_address_bytes)
         return overlay_hash
 
     def generate_nonce(self):
@@ -77,43 +76,45 @@ class MinedAddress:
     def mine_wallet(self):
         match_found = False
         count = 0
-
+    
+        overlay_range_start = hex(int(self.neighbourhood) * (2 ** (16 - int(self.topology.depth))))[2:].zfill(4)
+        overlay_range_end = hex((int(self.neighbourhood) + 1) * (2 ** (16 - int(self.topology.depth))) - 1)[2:].zfill(4)
+    
+        overlay_group = f"Group {int(overlay_range_start, 16):X} (0x{overlay_range_start} to 0x{overlay_range_end})"
+        logging.info("Searching in overlay group: %s", overlay_group)
+    
         while not match_found and count < MAX_ITERATIONS:
-            overlay_address = self.topology.get_base_overlay_address(self.neighbourhood)[:3]
             private_key, eth_address = self.generate_ethereum_address()
-            nonce = self.generate_nonce()
-            overlay_hash = self.create_overlay_hash(eth_address, nonce)
-
-            logging.debug("Private Key: %s, Ethereum Address: %s, Overlay: %s, Nonce: %s", private_key, eth_address, overlay_address.hex(), nonce.hex())
-
-            character_match = False
-
-            if overlay_address[0] != self.first_byte_base:
-                count += 1
-                continue
-
-            for i in range(1, 3):
-                if overlay_hash[i] & self.bit_mask[i] == self.base_overlay_address[i] & self.bit_mask[i]:
-                    self.logger.debug("Character match found for byte %d", i)
-                    character_match = True
-                    break
-
-            if character_match:
-                if self.compare_overlay_address_with_base(overlay_address, self.base_overlay_address, self.bit_mask):
-                    private_key, eth_address = self.generate_ethereum_address()
-                    match_found = True
-
+            overlay_hash = self.calculate_overlay_address(eth_address)
+    
+            overlay_address_hex = overlay_hash.hex()[:6]  # Convert overlay hash to hex
+            #overlay_address_hex = overlay_address_hex.lstrip("0x")  # Remove "0x" prefix if exists
+            #overlay_range_start = overlay_range_start.lstrip("0x")
+            #overlay_range_end = overlay_range_end.lstrip("0x")
+    
+            logging.debug(
+                "Private Key: %s, Ethereum Address: %s, Overlay: %s, Searching in: Overlay Range %06x-%06x (Depth %s)",
+                private_key,
+                eth_address,
+                overlay_address_hex,
+                overlay_range_start,
+                overlay_range_end,
+                self.topology.depth
+            )
+    
+            if overlay_range_start <= overlay_address_hex <= overlay_range_end:
+                match_found = True
+                logging.debug("Match found after %d iterations...", count)
+    
             count += 1
-            logging.debug("count increase to %d", count)
-
+    
         if match_found:
             return {
                 'private_key': private_key,
                 'ethereum_address': eth_address,
-                'overlay_address': overlay_address.hex(),
-                'nonce': nonce.hex()
+                'overlay_address': overlay_hash.hex(),
             }
-        return None
+        return None 
 
     def generate_ethereum_address(self):
         private_key_bytes = secrets.token_bytes(32)
@@ -123,13 +124,6 @@ class MinedAddress:
         acct = Account.from_key(private_key)
         eth_address = acct.address
         return private_key, eth_address
-
-    def calculate_overlay_address(self, private_key):
-        acct = Account.from_key(private_key)
-        public_key = acct._key_obj.public_key
-        public_key_bytes = public_key.to_bytes()
-        overlay_hash = keccak(public_key_bytes).hex()[:12]
-        return overlay_hash
 
 
 # Integrate the MinedAddress class into the generate_wallet_async function
@@ -156,7 +150,7 @@ def generate_wallet():
         return jsonify({'error': 'Neighbourhood and depth parameters are required.'}), 400
 
     radius = 3
-    num_processes = 1
+    num_processes = 16
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
