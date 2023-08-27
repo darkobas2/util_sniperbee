@@ -76,7 +76,6 @@ class MinedAddress:
         eth_address = acct.address
         return private_key, eth_address
 
-
 def encrypt_private_key(private_key, password):
     keystore = w3.eth.account.encrypt(private_key, password)
     return keystore
@@ -213,5 +212,6 @@ def generate_wallet():
         return jsonify({'error': 'No valid wallet found.'}), 404
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    port=os.getenv(PORT, 80)
+    app.run(host='0.0.0.0', port=PORT)
 
