@@ -96,34 +96,68 @@ async def generate_wallet_async(depth, neighbourhood, radius, num_processes=1):
 def find_lowest_neighbourhood():
     response = requests.get("https://api.swarmscan.io/v1/network/neighborhoods")
     data = response.json()
-    
-    chosen_depth = None
+
     eligible_neighbourhoods = []
-    
-    for depth_str, neighbourhoods in sorted(data["neighborhoods"].items(), key=lambda item: int(item[0])):
+
+    for depth_str, neighbourhoods in data["neighborhoods"].items():
         depth = int(depth_str)
-        
-        # Skip depth 0
+
         if depth == 0:
             continue
-        
-        eligible_neighbourhoods.clear()
-        
-        for neighbourhood_bin, count in sorted(neighbourhoods.items(), key=lambda item: int(item[1])):
+
+        eligible_neighbourhoods_for_depth = []
+
+        for neighbourhood_bin, count in neighbourhoods.items():
             neighbourhood_bin = neighbourhood_bin[2:]
             if set(neighbourhood_bin) <= {'0', '1'} and count < 4:
-                eligible_neighbourhoods.append(int(neighbourhood_bin, 2))
-        
-        if len(eligible_neighbourhoods) > 0:
-            chosen_depth = depth
-            break
-    
-    if chosen_depth is not None:
-        chosen_neighbourhood = random.choice(eligible_neighbourhoods)
-        return chosen_depth, chosen_neighbourhood
+                eligible_neighbourhoods_for_depth.append({
+                    "neighbourhood": neighbourhood_bin,
+                    "count": count
+                })
+
+        if eligible_neighbourhoods_for_depth:
+            eligible_neighbourhoods.append({
+                "depth": depth,
+                "neighbourhoods": eligible_neighbourhoods_for_depth
+            })
+
+    # Sort eligible neighbourhoods by depth
+    eligible_neighbourhoods.sort(key=lambda x: x["depth"])
+
+    # Save the complete dict with eligible neighbourhoods
+    with open('neighborhoods.json', 'w') as json_file:
+        json.dump(eligible_neighbourhoods, json_file, indent=4)
+
+    logging.debug("Eligible neighbourhoods: %s", eligible_neighbourhoods)
+
+    if eligible_neighbourhoods:
+        chosen_data = eligible_neighbourhoods[0]  # Select the first depth
+        chosen_depth = chosen_data["depth"]
+        chosen_neighbourhood_data = random.choice(chosen_data["neighbourhoods"])
+        chosen_neighbourhood = chosen_neighbourhood_data["neighbourhood"]
+        update_neighbourhood_count(chosen_depth, chosen_neighbourhood)
+        return chosen_depth, int(chosen_neighbourhood, 2)
     else:
         return None, None
 
+def update_neighbourhood_count(chosen_depth, chosen_neighbourhood):
+    if os.path.exists("neighborhoods.json"):
+        with open("neighborhoods.json", "r") as file:
+            neighborhood_data = json.load(file)
+    else:
+        neighborhood_data = []
+
+    for depth_data in neighborhood_data:
+        if depth_data["depth"] == chosen_depth:
+            for neighbourhood_data in depth_data["neighbourhoods"]:
+                if neighbourhood_data["neighbourhood"] == chosen_neighbourhood:
+                    neighbourhood_data["count"] += 1
+                    if neighbourhood_data["count"] >= 4:
+                        depth_data["neighbourhoods"].remove(neighbourhood_data)
+                    break
+    
+    with open('neighborhoods.json', 'w') as json_file:
+        json.dump(neighborhood_data, json_file, indent=4)
 
 @app.route('/generate_wallet', methods=['GET'])
 def generate_wallet():
