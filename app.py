@@ -1,7 +1,8 @@
 from flask import Flask, request, jsonify
 import asyncio
 from concurrent.futures import ProcessPoolExecutor
-import logging, os, secrets, json, requests, random
+import logging, os, secrets, json, requests, random, time
+from datetime import datetime, timedelta
 from eth_account import Account
 from eth_utils import keccak, to_normalized_address
 from web3.auto import w3
@@ -94,44 +95,58 @@ async def generate_wallet_async(depth, neighbourhood, radius, num_processes=1):
         return valid_wallets
 
 def find_lowest_neighbourhood():
-    response = requests.get("https://api.swarmscan.io/v1/network/neighborhoods")
-    data = response.json()
+    current_time = time.time()
+    neighborhoods_data = None
+    update_needed = False
 
-    eligible_neighbourhoods = []
+    if os.path.exists("neighborhoods.json"):
+        with open("neighborhoods.json", "r") as file:
+            neighborhoods_data = json.load(file)
 
-    for depth_str, neighbourhoods in data["neighborhoods"].items():
-        depth = int(depth_str)
+            # Check if all depths are empty or if 30 minutes have passed since last update
+            if all(not depth_data["neighbourhoods"] for depth_data in neighborhoods_data) or \
+                    current_time - neighborhoods_data[0].get("last_update", 0) >= 30 * 60:
+                update_needed = True
 
-        if depth == 0:
-            continue
+    if not neighborhoods_data or update_needed:
+        response = requests.get("https://api.swarmscan.io/v1/network/neighborhoods")
+        data = response.json()
 
-        eligible_neighbourhoods_for_depth = []
+        eligible_neighbourhoods = []
 
-        for neighbourhood_bin, count in neighbourhoods.items():
-            neighbourhood_bin = neighbourhood_bin[2:]
-            if set(neighbourhood_bin) <= {'0', '1'} and count < 4:
-                eligible_neighbourhoods_for_depth.append({
-                    "neighbourhood": neighbourhood_bin,
-                    "count": count
+        for depth_str, neighbourhoods in data["neighborhoods"].items():
+            depth = int(depth_str)
+
+            if depth == 0:
+                continue
+
+            eligible_neighbourhoods_for_depth = []
+
+            for neighbourhood_bin, count in neighbourhoods.items():
+                neighbourhood_bin = neighbourhood_bin[2:]
+                if set(neighbourhood_bin) <= {'0', '1'} and count < 4:
+                    eligible_neighbourhoods_for_depth.append({
+                        "neighbourhood": neighbourhood_bin,
+                        "count": count
+                    })
+
+            if eligible_neighbourhoods_for_depth:
+                eligible_neighbourhoods.append({
+                    "depth": depth,
+                    "neighbourhoods": eligible_neighbourhoods_for_depth
                 })
 
-        if eligible_neighbourhoods_for_depth:
-            eligible_neighbourhoods.append({
-                "depth": depth,
-                "neighbourhoods": eligible_neighbourhoods_for_depth
-            })
+        # Save the complete dict with eligible neighbourhoods
+        neighborhoods_data = eligible_neighbourhoods
+        neighborhoods_data[0]["last_update"] = current_time  # Update the last_update timestamp
+        with open('neighborhoods.json', 'w') as json_file:
+            json.dump(neighborhoods_data, json_file, indent=4)
 
-    # Sort eligible neighbourhoods by depth
-    eligible_neighbourhoods.sort(key=lambda x: x["depth"])
+    if neighborhoods_data:
+        # Sort eligible neighbourhoods by depth
+        neighborhoods_data.sort(key=lambda x: x["depth"])
 
-    # Save the complete dict with eligible neighbourhoods
-    with open('neighborhoods.json', 'w') as json_file:
-        json.dump(eligible_neighbourhoods, json_file, indent=4)
-
-    logging.debug("Eligible neighbourhoods: %s", eligible_neighbourhoods)
-
-    if eligible_neighbourhoods:
-        chosen_data = eligible_neighbourhoods[0]  # Select the first depth
+        chosen_data = neighborhoods_data[0]  # Select the first depth
         chosen_depth = chosen_data["depth"]
         chosen_neighbourhood_data = random.choice(chosen_data["neighbourhoods"])
         chosen_neighbourhood = chosen_neighbourhood_data["neighbourhood"]
@@ -154,8 +169,10 @@ def update_neighbourhood_count(chosen_depth, chosen_neighbourhood):
                     neighbourhood_data["count"] += 1
                     if neighbourhood_data["count"] >= 4:
                         depth_data["neighbourhoods"].remove(neighbourhood_data)
+                        if len(depth_data["neighbourhoods"]) == 0:
+                            neighborhood_data.remove(depth_data)
                     break
-    
+
     with open('neighborhoods.json', 'w') as json_file:
         json.dump(neighborhood_data, json_file, indent=4)
 
