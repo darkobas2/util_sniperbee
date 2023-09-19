@@ -10,6 +10,8 @@ from eth_account.datastructures import SignedTransaction
 
 
 app = Flask(__name__)
+app_root = os.getenv("APP_ROOT", "")
+app.config["APPLICATION_ROOT"] = app_root
 executor = ProcessPoolExecutor()
 
 logging.basicConfig(level=logging.INFO)  # Set the logging level to DEBUG
@@ -22,8 +24,12 @@ class MinedAddress:
         self.depth = depth
         self.logger = logging.getLogger('MinedAddress')
 
-    def calculate_overlay_address(self, ethereum_address):
+    def calculate_overlay_address(self, ethereum_address, network_id=1,nonce=None):
         ethereum_address_bytes = bytes.fromhex(ethereum_address[2:])
+        network_id_bytes = network_id.to_bytes(8, byteorder='little')
+        nonce_bytes = nonce if nonce is not None else bytes([0] * 32)
+        # Combine bytes for address, network ID, and nonce
+        combined_bytes = ethereum_address_bytes + network_id_bytes + nonce_bytes
         overlay_hash = keccak(ethereum_address_bytes)
         return overlay_hash
 
@@ -123,7 +129,7 @@ def find_lowest_neighbourhood():
 
             for neighbourhood_bin, count in neighbourhoods.items():
                 neighbourhood_bin = neighbourhood_bin[2:]
-                if set(neighbourhood_bin) <= {'0', '1'} and count < 4:
+                if set(neighbourhood_bin) <= {'0', '1'} and count < 2:
                     eligible_neighbourhoods_for_depth.append({
                         "neighbourhood": neighbourhood_bin,
                         "count": count
@@ -166,7 +172,7 @@ def update_neighbourhood_count(chosen_depth, chosen_neighbourhood):
             for neighbourhood_data in depth_data["neighbourhoods"]:
                 if neighbourhood_data["neighbourhood"] == chosen_neighbourhood:
                     neighbourhood_data["count"] += 1
-                    if neighbourhood_data["count"] >= 4:
+                    if neighbourhood_data["count"] >= 2:
                         depth_data["neighbourhoods"].remove(neighbourhood_data)
                         if len(depth_data["neighbourhoods"]) == 0:
                             neighborhood_data.remove(depth_data)
@@ -212,6 +218,6 @@ def generate_wallet():
         return jsonify({'error': 'No valid wallet found.'}), 404
 
 if __name__ == '__main__':
-    port=os.getenv(PORT, 80)
+    port=os.getenv("PORT", 80)
     app.run(host='0.0.0.0', port=PORT)
 
