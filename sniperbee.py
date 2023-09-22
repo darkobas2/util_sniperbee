@@ -108,9 +108,9 @@ def find_lowest_neighbourhood():
         with open("neighborhoods.json", "r") as file:
             neighborhoods_data = json.load(file)
 
-            # Check if all depths are empty or if 30 minutes have passed since last update
+            # Check if all depths are empty or if 60 minutes have passed since last update
             if all(not depth_data["neighbourhoods"] for depth_data in neighborhoods_data) or \
-                    current_time - neighborhoods_data[0].get("last_update", 0) >= 30 * 60:
+                    current_time - neighborhoods_data[0].get("last_update", 0) >= 60 * 60:
                 update_needed = True
 
     if not neighborhoods_data or update_needed:
