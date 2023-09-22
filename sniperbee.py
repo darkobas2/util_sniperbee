@@ -10,8 +10,6 @@ from eth_account.datastructures import SignedTransaction
 
 
 app = Flask(__name__)
-app_root = os.getenv("APP_ROOT", "")
-app.config["APPLICATION_ROOT"] = app_root
 executor = ProcessPoolExecutor()
 
 logging.basicConfig(level=logging.INFO)  # Set the logging level to DEBUG
@@ -216,6 +214,14 @@ def generate_wallet():
         return jsonify(response_data)
     else:
         return jsonify({'error': 'No valid wallet found.'}), 404
+
+@app.route('/get_nbhood', methods=['GET'])
+def get_neighbourhood():
+    depth, neighbourhood = find_lowest_neighbourhood()
+    if depth is not None and neighbourhood is not None:
+        return str(neighbourhood)  # Return the neighborhood number as plain text
+    else:
+        return 'No suitable neighborhood found.', 400  # Return an error message as plain text
 
 if __name__ == '__main__':
     port=os.getenv("PORT", 80)
