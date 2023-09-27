@@ -223,6 +223,15 @@ def get_neighbourhood():
     else:
         return 'No suitable neighborhood found.', 400  # Return an error message as plain text
 
+@app.route('/get_nbhood', methods=['GET'])
+def get_neighbourhood_binary():
+    depth, neighbourhood = find_lowest_neighbourhood()
+    if depth is not None and neighbourhood is not None:
+        binary_neighbourhood = bin(neighbourhood)[2:]  # Convert to binary and remove the '0b' prefix
+        return binary_neighbourhood  # Return the binary neighborhood as plain text
+    else:
+        return 'No suitable neighborhood found.', 400  # Return an error message as plain text
+
 if __name__ == '__main__':
     port=os.getenv("PORT", 80)
     app.run(host='0.0.0.0', port=PORT)
