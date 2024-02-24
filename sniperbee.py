@@ -233,6 +233,20 @@ def get_neighbourhood_binary():
     else:
         return 'No suitable neighborhood found.', 400
 
+@app.route('/get_nbhood_binary_download', methods=['GET'])
+def get_nbhood_binary_download():
+    depth, neighbourhood = find_lowest_neighbourhood()
+    if depth is not None and neighbourhood is not None:
+        binary_neighbourhood = format(neighbourhood, f'0{depth}b')  # Ensure fixed length
+
+        # Set the response content type as plain text for download
+        response = make_response(binary_neighbourhood)
+        response.headers['Content-Type'] = 'text/plain'
+
+        return response
+    else:
+        return 'No suitable neighborhood found.', 400
+
 if __name__ == '__main__':
     PORT=os.getenv("PORT", 8080)
     app.run(host='0.0.0.0', port=PORT)
