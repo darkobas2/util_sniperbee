@@ -127,7 +127,7 @@ def find_lowest_neighbourhood():
 
             for neighbourhood_bin, count in neighbourhoods.items():
                 neighbourhood_bin = neighbourhood_bin[2:]
-                if set(neighbourhood_bin) <= {'0', '1'} and count < 2:
+                if set(neighbourhood_bin) <= {'0', '1'} and count < 4:
                     eligible_neighbourhoods_for_depth.append({
                         "neighbourhood": neighbourhood_bin,
                         "count": count
@@ -223,16 +223,17 @@ def get_neighbourhood():
     else:
         return 'No suitable neighborhood found.', 400  # Return an error message as plain text
 
-@app.route('/get_nbhood', methods=['GET'])
+@app.route('/get_nbhood_binary', methods=['GET'])
 def get_neighbourhood_binary():
     depth, neighbourhood = find_lowest_neighbourhood()
     if depth is not None and neighbourhood is not None:
-        binary_neighbourhood = bin(neighbourhood)[2:]  # Convert to binary and remove the '0b' prefix
-        return binary_neighbourhood  # Return the binary neighborhood as plain text
+        # Convert neighbourhood to binary string with fixed length based on depth
+        binary_neighbourhood = format(neighbourhood, f'0{depth}b')  
+        return binary_neighbourhood
     else:
-        return 'No suitable neighborhood found.', 400  # Return an error message as plain text
+        return 'No suitable neighborhood found.', 400
 
 if __name__ == '__main__':
-    port=os.getenv("PORT", 80)
+    PORT=os.getenv("PORT", 8080)
     app.run(host='0.0.0.0', port=PORT)
 
